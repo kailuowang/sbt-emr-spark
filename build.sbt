@@ -12,7 +12,7 @@ libraryDependencies ++= Seq(
   "com.amazonaws" % "aws-java-sdk-s3" % awsVersion,
   "com.github.pathikrit" %% "better-files" % "2.14.0",
   "com.github.eirslett" %% "sbt-slf4j" % "0.1",
-  "com.typesafe.play" %% "play-json" % "2.4.8",
+  "org.json4s" %% "json4s-native" % "3.3.0",
   "org.slf4s" %% "slf4s-api" % "1.7.12"
 )
 
