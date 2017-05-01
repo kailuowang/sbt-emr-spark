@@ -1,6 +1,6 @@
 # sbt-emr-spark
 
-[![Build Status](https://travis-ci.org/pishen/sbt-emr-spark.svg?branch=master)](https://travis-ci.org/pishen/sbt-emr-spark)
+[![Build Status](https://travis-ci.org/kailuowang/sbt-emr-spark.svg?branch=master)](https://travis-ci.org/pishen/sbt-emr-spark)
 
 Run your [Spark on AWS EMR](http://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark-launch.html) by sbt
 
@@ -9,7 +9,7 @@ Run your [Spark on AWS EMR](http://docs.aws.amazon.com/emr/latest/ReleaseGuide/e
 1. Add sbt-emr-spark in `project/plugins.sbt`
 
   ```
-  addSbtPlugin("net.pishen" % "sbt-emr-spark" % "0.7.1")
+  addSbtPlugin("com.kailuowang" % "sbt-emr-spark" % "0.8.0")
   ```
 
 2. Prepare your `build.sbt`

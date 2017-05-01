@@ -20,6 +20,16 @@ libraryDependencies ++= Seq(
 addSbtPlugin("com.eed3si9n" % "sbt-assembly" % "0.14.3")
 
 publishMavenStyle := false
+
 organization := "com.kailuowang"
 
-licenses += ("Apache-2.0" -> url("https://www.apache.org/licenses/LICENSE-2.0.html"))
+publishArtifact in Test := false
+
+pomIncludeRepository := { _ => false }
+
+
+homepage := Some(url("https://github.com/kailuowang/sbt-emr-spark"))
+
+licenses := Seq("Apache 2" -> url("http://www.apache.org/licenses/LICENSE-2.0.txt"))
+
+description := "sbt plugin for automating spark job on EMR cluster"
