@@ -23,6 +23,8 @@ publishMavenStyle := false
 
 organization := "com.kailuowang"
 
+bintrayOrganization := Some("kailuowang")
+
 publishArtifact in Test := false
 
 pomIncludeRepository := { _ => false }
