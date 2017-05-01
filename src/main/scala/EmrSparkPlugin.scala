@@ -14,10 +14,11 @@
 
 package sbtemrspark
 
-import scala.collection.JavaConverters._
+import java.io.{FileInputStream, InputStream}
 
+import scala.collection.JavaConverters._
 import com.amazonaws.services.elasticmapreduce.{AmazonElasticMapReduce, AmazonElasticMapReduceClientBuilder}
-import com.amazonaws.services.elasticmapreduce.model.{Unit => _, Configuration => EMRConfiguration, _}
+import com.amazonaws.services.elasticmapreduce.model.{Configuration => EMRConfiguration, Unit => _, _}
 import com.amazonaws.services.s3.AmazonS3ClientBuilder
 import play.api.libs.json._
 import sbinary.DefaultProtocol.StringFormat
@@ -29,6 +30,9 @@ import sbt.complete.DefaultParsers._
 import sbtassembly.AssemblyKeys._
 import sbtassembly.AssemblyPlugin
 import java.util.Collection
+
+import sbtemrspark.EmrSparkPlugin.S3Url
+
 import scala.util.Try
 
 object EmrSparkPlugin extends AutoPlugin {
@@ -93,7 +97,8 @@ object EmrSparkPlugin extends AutoPlugin {
     s3JarFolder: String,
     s3LoggingFolder: Option[String],
     s3JsonConfiguration: Option[String],
-    additionalApplications: Option[Seq[String]]
+    additionalApplications: Option[Seq[String]],
+    resourceLocation: File
   )
 
   override lazy val projectSettings = Seq(
@@ -137,7 +142,8 @@ object EmrSparkPlugin extends AutoPlugin {
       sparkS3JarFolder.value,
       sparkS3LoggingFolder.value,
       sparkS3JsonConfiguration.value,
-      sparkAdditionalApplications.value
+      sparkAdditionalApplications.value,
+      (resourceDirectory in Compile).value
     ),
 
     sparkCreateCluster := {
@@ -213,6 +219,37 @@ object EmrSparkPlugin extends AutoPlugin {
     }
   )
 
+  def readConfiguration(url: String, resourceLocation: File): Seq[EMRConfiguration] = {
+    val jsonInputStream: InputStream = S3Url.parse(url).map { s3Url =>
+      val s3 = AmazonS3ClientBuilder.defaultClient()
+      s3.getObject(s3Url.bucket, s3Url.key).getObjectContent
+    }.getOrElse {
+      new FileInputStream(resourceLocation / url)
+    }
+
+    val fileJson = Json.parse(jsonInputStream)
+
+    def parseConfigurations(json: JsValue): Seq[EMRConfiguration] = {
+      json.as[Seq[JsObject]].map { obj =>
+        Some(new EMRConfiguration())
+          .map { conf =>
+            (obj \ "Properties").asOpt[Map[String, String]]
+              .filter(_.nonEmpty)
+              .fold(conf)(props => conf.withProperties(props.asJava))
+          }
+          .map { conf =>
+            (obj \ "Configurations").asOpt[JsValue]
+              .map(json => parseConfigurations(json))
+              .filter(_.nonEmpty)
+              .fold(conf)(confs => conf.withConfigurations(confs: _*))
+          }
+          .get
+          .withClassification((obj \ "Classification").as[String])
+      }
+    }
+    parseConfigurations(fileJson)
+  }
+
   def createCluster(settings: Settings, stepConfig: Option[Collection[StepConfig]])(implicit log: Logger) = {
     val emr = buildEmr(settings)
     val clustersNames = emr
@@ -229,28 +266,7 @@ object EmrSparkPlugin extends AutoPlugin {
         .map(r => settings.emrAutoScalingRole.fold(r)(c => r.withAutoScalingRole(c)))
         .map(r => settings.s3JsonConfiguration.fold(r) { url =>
           log.info(s"Importing configuration from $url")
-          val s3 = AmazonS3ClientBuilder.defaultClient()
-          val s3Url = new S3Url(url)
-          val json = Json.parse(s3.getObject(s3Url.bucket, s3Url.key).getObjectContent)
-          def parseConfigurations(json: JsValue): Seq[EMRConfiguration] = {
-            json.as[Seq[JsObject]].map { obj =>
-              Some(new EMRConfiguration())
-                .map { conf =>
-                  (obj \ "Properties").asOpt[Map[String, String]]
-                    .filter(_.nonEmpty)
-                    .fold(conf)(props => conf.withProperties(props.asJava))
-                }
-                .map { conf =>
-                  (obj \ "Configurations").asOpt[JsValue]
-                    .map(json => parseConfigurations(json))
-                    .filter(_.nonEmpty)
-                    .fold(conf)(confs => conf.withConfigurations(confs: _*))
-                }
-                .get
-                .withClassification((obj \ "Classification").as[String])
-            }
-          }
-          r.withConfigurations(parseConfigurations(json): _*)
+          r.withConfigurations(readConfiguration(url, settings.resourceLocation): _*)
         })
         .map(r => settings.tags.fold(r)(tags => r.withTags(tags.map { case (k, v) => new Tag(k, v) }.asJavaCollection)))
         .get
@@ -388,5 +404,10 @@ object EmrSparkPlugin extends AutoPlugin {
     }
 
     override def toString = s"s3://$bucket/$key"
+  }
+
+  object S3Url {
+    def parse(url: String): Option[S3Url] =
+      if(url.startsWith("s3://")) Some(new S3Url(url)) else None
   }
 }
