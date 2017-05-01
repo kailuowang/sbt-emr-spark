@@ -58,6 +58,7 @@ object EmrSparkPlugin extends AutoPlugin {
     val sparkS3LoggingFolder = settingKey[Option[String]]("S3 folder for application's logs")
     val sparkS3JsonConfiguration = settingKey[Option[String]]("S3 location for the EMR cluster json configuration")
     val sparkAdditionalApplications = settingKey[Option[Seq[String]]]("Applications other than Spark to be deployed on the EMR cluster, these are case insensitive.")
+    val sparkJobExtraSettings = settingKey[Option[String]]("Extra settings when submitting spark job. E.g. \"--executor-cores 5 --driver-memory 5G\"")
     val sparkEmrSteps = settingKey[Option[Seq[StepConfig]]]("Multiple steps to run once cluster is setup")
     val sparkSettings = settingKey[Settings]("wrapper object for above settings")
 
@@ -99,6 +100,7 @@ object EmrSparkPlugin extends AutoPlugin {
     s3LoggingFolder: Option[String],
     s3JsonConfiguration: Option[String],
     additionalApplications: Option[Seq[String]],
+    jobExtraSettings: Option[String],
     resourceLocation: File
   )
 
@@ -121,6 +123,7 @@ object EmrSparkPlugin extends AutoPlugin {
     sparkS3LoggingFolder := None,
     sparkS3JsonConfiguration := None,
     sparkAdditionalApplications := None,
+    sparkJobExtraSettings := None,
     sparkEmrSteps := None,
 
 
@@ -145,6 +148,7 @@ object EmrSparkPlugin extends AutoPlugin {
       sparkS3LoggingFolder.value,
       sparkS3JsonConfiguration.value,
       sparkAdditionalApplications.value,
+      sparkJobExtraSettings.value,
       (resourceDirectory in Compile).value
     ),
 
@@ -351,7 +355,7 @@ object EmrSparkPlugin extends AutoPlugin {
       .withHadoopJarStep(
         new HadoopJarStepConfig()
           .withJar("command-runner.jar")
-          .withArgs((Seq("spark-submit", "--deploy-mode", "cluster", "--class", mainClass, uploadedAt.toString) ++ args).asJava)
+          .withArgs((Seq("spark-submit", "--deploy-mode", "cluster", "--class", mainClass) ++ settings.jobExtraSettings.fold(Seq[String]())(_.split(" ").toSeq) ++ Seq(uploadedAt.toString) ++ args).asJava)
       )
     clusterIdOpt match {
       case Some(clusterId) =>
