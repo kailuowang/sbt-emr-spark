@@ -281,6 +281,7 @@ object EmrSparkPlugin extends AutoPlugin {
         .withReleaseLabel(settings.emrRelease)
         .withServiceRole(settings.emrServiceRole)
         .withJobFlowRole(settings.instanceRole)
+        .withVisibleToAllUsers(true)
         .withInstances {
           Some(new JobFlowInstancesConfig())
             .map(c => settings.subnetId.fold(c)(id => c.withEc2SubnetId(id)))
