@@ -19,7 +19,7 @@ import java.io.{FileInputStream, InputStream}
 import scala.collection.JavaConverters._
 import com.amazonaws.services.elasticmapreduce.{AmazonElasticMapReduce, AmazonElasticMapReduceClientBuilder}
 import com.amazonaws.services.elasticmapreduce.model.{Configuration => EMRConfiguration, Unit => _, _}
-import com.amazonaws.services.s3.AmazonS3ClientBuilder
+import com.amazonaws.services.s3.{AmazonS3, AmazonS3ClientBuilder}
 import play.api.libs.json._
 import sbinary.DefaultProtocol.StringFormat
 import sbt._
@@ -102,7 +102,9 @@ object EmrSparkPlugin extends AutoPlugin {
     additionalApplications: Option[Seq[String]],
     jobExtraSettings: Option[String],
     resourceLocation: File
-  )
+  ) {
+    lazy val s3: AmazonS3 = AmazonS3ClientBuilder.standard.withRegion(awsRegion).build()
+  }
 
   override lazy val projectSettings = Seq(
     sparkClusterName := name.value,
@@ -183,7 +185,7 @@ object EmrSparkPlugin extends AutoPlugin {
 
     sparkUploadJarToS3 := {
       implicit val log = streams.value.log
-      if(Try(uploadJarToS3(sparkSettings.value.s3JarFolder, assembly.value)).isFailure)
+      if(Try(uploadJarToS3(sparkSettings.value.s3JarFolder, assembly.value, sparkSettings.value.s3)).isFailure)
         sys.error("Failed to upload application jar to S3.")
     },
 
@@ -225,9 +227,8 @@ object EmrSparkPlugin extends AutoPlugin {
     }
   )
 
-  def readConfiguration(url: String, resourceLocation: File): Seq[EMRConfiguration] = {
+  def readConfiguration(url: String, resourceLocation: File, s3: AmazonS3): Seq[EMRConfiguration] = {
     val jsonInputStream: InputStream = S3Url.parse(url).map { s3Url =>
-      val s3 = AmazonS3ClientBuilder.defaultClient()
       s3.getObject(s3Url.bucket, s3Url.key).getObjectContent
     }.getOrElse {
       new FileInputStream(resourceLocation / url)
@@ -272,7 +273,7 @@ object EmrSparkPlugin extends AutoPlugin {
         .map(r => settings.emrAutoScalingRole.fold(r)(c => r.withAutoScalingRole(c)))
         .map(r => settings.s3JsonConfiguration.fold(r) { url =>
           log.info(s"Importing configuration from $url")
-          r.withConfigurations(readConfiguration(url, settings.resourceLocation): _*)
+          r.withConfigurations(readConfiguration(url, settings.resourceLocation, settings.s3): _*)
         })
         .get
         .withTags(settings.tags.map({ case (k,v) => new Tag(k, v)}).asJavaCollection)
@@ -320,9 +321,8 @@ object EmrSparkPlugin extends AutoPlugin {
     }
   }
 
-  def uploadJarToS3(s3Location: String, jarFile: File)(implicit log: Logger): S3Url = {
+  def uploadJarToS3(s3Location: String, jarFile: File, s3: AmazonS3)(implicit log: Logger): S3Url = {
     log.info(s"Uploading jar ${jarFile.getName} to S3 path $s3Location")
-    val s3 = AmazonS3ClientBuilder.defaultClient()
     val jarUrl = new S3Url(s3Location) / jarFile.getName
     val startTime = System.currentTimeMillis
     s3.putObject(jarUrl.bucket, jarUrl.key, jarFile)
@@ -346,7 +346,7 @@ object EmrSparkPlugin extends AutoPlugin {
   )(implicit log: Logger) = {
 
     val s3Location = settings.s3JarFolder
-    val uploadedAt = uploadJarToS3(s3Location, jar)
+    val uploadedAt = uploadJarToS3(s3Location, jar, settings.s3)
     val clusterIdOpt = getClusterId(settings)
     val emr = buildEmr(settings)
     //submit job
