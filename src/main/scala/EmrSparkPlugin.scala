@@ -171,6 +171,7 @@ object EmrSparkPlugin extends AutoPlugin {
       Def.inputTask {
         implicit val log = streams.value.log
         val (mainClass, args) = loadForParser(discoveredMainClasses in Compile)((s, names) => runMainParser(s, names getOrElse Nil)).parsed
+        (clean in Compile).value //clean first
         submitJob(sparkSettings.value, mainClass, args, assembly.value)
       }.evaluated
     },
