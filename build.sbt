@@ -6,7 +6,7 @@ scalaVersion := "2.10.6"
 
 sbtPlugin := true
 
-val awsVersion = "1.11.111"
+val awsVersion = "1.11.160"
 
 libraryDependencies ++= Seq(
   "com.amazonaws" % "aws-java-sdk-emr" % awsVersion,
