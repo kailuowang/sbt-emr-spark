@@ -61,6 +61,7 @@ object EmrSparkPlugin extends AutoPlugin {
     val sparkJobExtraSettings = settingKey[Option[String]]("Extra settings when submitting spark job. E.g. \"--executor-cores 5 --driver-memory 5G\"")
     val sparkEmrSteps = settingKey[Option[Seq[StepConfig]]]("Multiple steps to run once cluster is setup")
     val sparkSettings = settingKey[Settings]("wrapper object for above settings")
+    val sparkExtraJars = settingKey[Seq[File]]("exra jars to be used on spark")
 
     //commands
     val sparkCreateCluster = taskKey[Unit]("create cluster")
@@ -91,21 +92,22 @@ object EmrSparkPlugin extends AutoPlugin {
     instanceType: String,
     instanceBidPrice: Option[String],
     instanceRole: String,
-
-    emrManagedMasterSecurityGroup: Option[String],
-    emrManagedSlaveSecurityGroup: Option[String],
-    additionalMasterSecurityGroups: Option[Seq[String]],
-    additionalSlaveSecurityGroups: Option[Seq[String]],
+    securitySettings: SecuritySettings,
     s3JarFolder: String,
     s3LoggingFolder: Option[String],
     s3JsonConfiguration: Option[String],
     additionalApplications: Option[Seq[String]],
     jobExtraSettings: Option[String],
-    resourceLocation: File
+    resourceLocation: File,
+    extraJas: Seq[File]
   ) {
     lazy val s3: AmazonS3 = AmazonS3ClientBuilder.standard.withRegion(awsRegion).build()
   }
 
+  case class SecuritySettings(    emrManagedMasterSecurityGroup: Option[String],
+                                  emrManagedSlaveSecurityGroup: Option[String],
+                                  additionalMasterSecurityGroups: Option[Seq[String]],
+                                  additionalSlaveSecurityGroups: Option[Seq[String]])
   override lazy val projectSettings = Seq(
     sparkClusterName := name.value,
     sparkEmrRelease := "emr-5.4.0",
@@ -127,6 +129,7 @@ object EmrSparkPlugin extends AutoPlugin {
     sparkAdditionalApplications := None,
     sparkJobExtraSettings := None,
     sparkEmrSteps := None,
+    sparkExtraJars := Seq(),
 
 
     sparkSettings := Settings(
@@ -142,16 +145,18 @@ object EmrSparkPlugin extends AutoPlugin {
       sparkInstanceType.value,
       sparkInstanceBidPrice.value,
       sparkInstanceRole.value,
+      SecuritySettings(
       sparkEmrManagedMasterSecurityGroup.value,
       sparkEmrManagedSlaveSecurityGroup.value,
       sparkAdditionalMasterSecurityGroups.value,
-      sparkAdditionalSlaveSecurityGroups.value,
+      sparkAdditionalSlaveSecurityGroups.value),
       sparkS3JarFolder.value,
       sparkS3LoggingFolder.value,
       sparkS3JsonConfiguration.value,
       sparkAdditionalApplications.value,
       sparkJobExtraSettings.value,
-      (resourceDirectory in Compile).value
+      (resourceDirectory in Compile).value,
+      sparkExtraJars.value
     ),
 
     sparkCreateCluster := {
@@ -186,7 +191,7 @@ object EmrSparkPlugin extends AutoPlugin {
 
     sparkUploadJarToS3 := {
       implicit val log = streams.value.log
-      if(Try(uploadJarToS3(sparkSettings.value.s3JarFolder, assembly.value, sparkSettings.value.s3)).isFailure)
+      if(Try(uploadJarsToS3(sparkSettings.value, assembly.value)).isFailure)
         sys.error("Failed to upload application jar to S3.")
     },
 
@@ -288,10 +293,10 @@ object EmrSparkPlugin extends AutoPlugin {
           Some(new JobFlowInstancesConfig())
             .map(c => settings.subnetId.fold(c)(id => c.withEc2SubnetId(id)))
             .map(c => settings.keyName.fold(c)(key => c.withEc2KeyName(key)))
-            .map(c => settings.emrManagedMasterSecurityGroup.fold(c)(c.withEmrManagedMasterSecurityGroup))
-            .map(c => settings.emrManagedSlaveSecurityGroup.fold(c)(c.withEmrManagedSlaveSecurityGroup))
-            .map(c => settings.additionalMasterSecurityGroups.fold(c)(ids => c.withAdditionalMasterSecurityGroups(ids: _*)))
-            .map(c => settings.additionalSlaveSecurityGroups.fold(c)(ids => c.withAdditionalSlaveSecurityGroups(ids: _*)))
+            .map(c => settings.securitySettings.emrManagedMasterSecurityGroup.fold(c)(c.withEmrManagedMasterSecurityGroup))
+            .map(c => settings.securitySettings.emrManagedSlaveSecurityGroup.fold(c)(c.withEmrManagedSlaveSecurityGroup))
+            .map(c => settings.securitySettings.additionalMasterSecurityGroups.fold(c)(ids => c.withAdditionalMasterSecurityGroups(ids: _*)))
+            .map(c => settings.securitySettings.additionalSlaveSecurityGroups.fold(c)(ids => c.withAdditionalSlaveSecurityGroups(ids: _*)))
             .get
             .withInstanceGroups {
               val masterConfig = Some(new InstanceGroupConfig())
@@ -322,13 +327,18 @@ object EmrSparkPlugin extends AutoPlugin {
     }
   }
 
-  def uploadJarToS3(s3Location: String, jarFile: File, s3: AmazonS3)(implicit log: Logger): S3Url = {
-    log.info(s"Uploading jar ${jarFile.getName} to S3 path $s3Location")
-    val jarUrl = new S3Url(s3Location) / jarFile.getName
-    val startTime = System.currentTimeMillis
-    s3.putObject(jarUrl.bucket, jarUrl.key, jarFile)
-    log.info(s"Jar uploaded in ${(System.currentTimeMillis-startTime)/1000} secs")
-    jarUrl
+
+  def uploadJarsToS3(settings: Settings, jarFile: File)(implicit log: Logger): Seq[S3Url] = {
+    def upload(file: File): S3Url = {
+      log.info(s"Uploading jar ${file.name} to S3 path ${settings.s3JarFolder}")
+      val jarUrl = new S3Url(settings.s3JarFolder) / file.name
+      val startTime = System.currentTimeMillis
+      settings.s3.putObject(jarUrl.bucket, jarUrl.key, file)
+      log.info(s"Jar uploaded in ${(System.currentTimeMillis - startTime) / 1000} secs")
+      jarUrl
+    }
+
+    (jarFile +: settings.extraJas).map(upload)
   }
 
   def getClusterId(settings: Settings): Option[String] = {
@@ -346,8 +356,7 @@ object EmrSparkPlugin extends AutoPlugin {
     jar: File
   )(implicit log: Logger) = {
 
-    val s3Location = settings.s3JarFolder
-    val uploadedAt = uploadJarToS3(s3Location, jar, settings.s3)
+    val uploadedAt = uploadJarsToS3(settings, jar)
     val clusterIdOpt = getClusterId(settings)
     val emr = buildEmr(settings)
     //submit job
@@ -357,7 +366,7 @@ object EmrSparkPlugin extends AutoPlugin {
       .withHadoopJarStep(
         new HadoopJarStepConfig()
           .withJar("command-runner.jar")
-          .withArgs((Seq("spark-submit", "--deploy-mode", "cluster", "--class", mainClass) ++ settings.jobExtraSettings.fold(Seq[String]())(_.split(" ").toSeq) ++ Seq(uploadedAt.toString) ++ args).asJava)
+          .withArgs((Seq("spark-submit", "--deploy-mode", "cluster", "--class", mainClass) ++ settings.jobExtraSettings.fold(Seq[String]())(_.split(" ").toSeq) ++ uploadedAt.map(_.toString) ++ args).asJava)
       )
     clusterIdOpt match {
       case Some(clusterId) =>
