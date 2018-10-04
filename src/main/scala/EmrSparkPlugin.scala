@@ -23,13 +23,13 @@ import com.amazonaws.services.s3.{AmazonS3, AmazonS3ClientBuilder}
 import play.api.libs.json._
 import sbinary.DefaultProtocol.StringFormat
 import sbt._
-import sbt.Cache.seqFormat
 import sbt.Defaults.runMainParser
 import sbt.Keys._
 import sbt.complete.DefaultParsers._
 import sbtassembly.AssemblyKeys._
 import sbtassembly.AssemblyPlugin
 import java.util.Collection
+import sjsonnew.BasicJsonProtocol._
 
 import sbtemrspark.EmrSparkPlugin.S3Url
 

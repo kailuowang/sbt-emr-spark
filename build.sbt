@@ -2,22 +2,20 @@ name := "sbt-emr-spark"
 
 
 
-scalaVersion := "2.10.6"
+scalaVersion := "2.12.7"
 
 sbtPlugin := true
 
-val awsVersion = "1.11.160"
+val awsVersion = "1.11.421"
 
 libraryDependencies ++= Seq(
   "com.amazonaws" % "aws-java-sdk-emr" % awsVersion,
   "com.amazonaws" % "aws-java-sdk-s3" % awsVersion,
-  "com.github.pathikrit" %% "better-files" % "2.14.0",
-  "com.github.eirslett" %% "sbt-slf4j" % "0.1",
-  "com.typesafe.play" %% "play-json" % "2.4.8",
-  "org.slf4s" %% "slf4s-api" % "1.7.12"
+  "com.github.pathikrit" %% "better-files" % "3.6.0",
+  "com.typesafe.play" %% "play-json" % "2.6.10"
 )
 
-addSbtPlugin("com.eed3si9n" % "sbt-assembly" % "0.14.3")
+addSbtPlugin("com.eed3si9n" % "sbt-assembly" % "0.14.8")
 
 publishMavenStyle := false
 
