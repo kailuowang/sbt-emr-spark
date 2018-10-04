@@ -74,7 +74,6 @@ object EmrSparkPlugin extends AutoPlugin {
   }
   import autoImport._
 
-  override def trigger = allRequirements
   override def requires = AssemblyPlugin
 
   val activatedClusterStates = Seq(ClusterState.RUNNING, ClusterState.STARTING, ClusterState.WAITING, ClusterState.BOOTSTRAPPING)
